@@ -93,9 +93,33 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
           return null
         },
         readSceneEntities:async()=>{
-          // Structured scene projection integration not implemented. Returning
-          // [] would falsely overwrite an existing nonempty remote scene.
-          throw Error('SCENE_PROJECTION_NOT_IMPLEMENTED')
+          // Query the SAME trusted WASM Scene after the committed revision ACK.
+          // Send a strict projection (stable IDs, names, kinds), never geometry
+          // blobs, file paths, materials or arbitrary JSON-RPC from the job.
+          const lease=queue?.getLease()
+          if(!lease)throw Error('SCENE_SNAPSHOT_CONSENT_REQUIRED')
+          const reply=host.execute({
+            request_id:crypto.randomUUID(),
+            session_id:lease.session_id,document_id:lease.document_id,
+            expected_revision:lease.revision,
+            action:'query_scene',params:{},
+          })
+          if(reply.status!=='succeeded'||!reply.reply ||
+              typeof reply.reply!=='object'||Array.isArray(reply.reply))
+            throw Error('SCENE_QUERY_NOT_VERIFIED')
+          const tree=(reply.reply as {tree?:unknown}).tree
+          if(!Array.isArray(tree)||tree.length>100)
+            throw Error('SCENE_PROJECTION_INVALID')
+          return tree.map((item:unknown)=>{
+            if(!item||typeof item!=='object'||Array.isArray(item))
+              throw Error('SCENE_ENTITY_INVALID')
+            const e=item as Record<string,unknown>
+            if(typeof e.id!=='string'||!/^[a-z][a-z0-9_-]{0,79}$/i.test(e.id)||
+                typeof e.name!=='string'||e.name.length>80||
+                typeof e.kind!=='string'||e.kind.length>32)
+              throw Error('SCENE_ENTITY_INVALID')
+            return {id:e.id,name:e.name,kind:e.kind}
+          })
         },
       })
       if(!await queue.authorizeFromUserClick()){
