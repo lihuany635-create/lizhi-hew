@@ -162,6 +162,14 @@ export function createLizhiModelHost(deps: ModelHostDeps) {
       }))
       const h = hello ? JSON.parse(hello) as { error?: unknown; result?: unknown } : null
       if (!h || h.error || !h.result) return uncertain
+      // The live protocol requires an explicit document attach after hello.
+      // Without it the real Hew dispatcher refuses even valid geometry
+      // (-32002), although mocked transports can appear successful.
+      const attach = scene.api_dispatch(connection, JSON.stringify({
+        jsonrpc: '2.0', id: 'attach', method: 'hew.doc.attach', params: {},
+      }))
+      const attached = attach ? JSON.parse(attach) as { error?: unknown; result?: unknown } : null
+      if (!attached || attached.error || attached.result === undefined) return uncertain
       const reply = scene.api_dispatch(connection, JSON.stringify({
         jsonrpc: '2.0', id: 'command', ...command,
       }))
