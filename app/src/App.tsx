@@ -74,6 +74,7 @@ import { installTestHarness, type PrintRecorder } from './test/harness'
 import { installLiveBridge, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
 import { LizhiModelPilotPanel } from './api/LizhiModelPilotPanel'
 import { LizhiModelQueuePilotPanel } from './api/LizhiModelQueuePilotPanel'
+import { canMountProductionModelQueue } from './api/lizhiModelSameOriginAuth'
 import { install as installConsoleCapture, restore as restoreConsoleCapture } from './log/consoleCapture'
 import { MATERIAL_SENTINEL } from './tools/PaintTool'
 import { outlinerDrawing, resolveDraft, setKernelHidden, type OutlinerDrawing, type PlaneUnitsScene } from './tools/planeUnits'
@@ -7089,10 +7090,13 @@ export default function App() {
         />
       )}
 
-      {/* M3 authenticated job bridge is deliberately DEV-only and only
-          becomes usable with a trusted SAME-ORIGIN LizhiAuth client. Never
-          pass the user's JWT through cross-origin iframe messages. */}
-      {import.meta.env.DEV && new URLSearchParams(window.location.search).has('lizhi-model-queue-pilot') && (
+      {/* M3 queue is opt-in: DEV isolated mock, or production same-origin
+          embedded Lizhi Cloud page with verified first-party auth host.
+          Neither variant transfers JWT through a URL or postMessage. */}
+      {((import.meta.env.DEV && new URLSearchParams(window.location.search).has('lizhi-model-queue-pilot')) ||
+        (!import.meta.env.DEV &&
+          new URLSearchParams(window.location.search).get('lizhi-model-queue')==='1' &&
+          canMountProductionModelQueue(window))) && (
         <LizhiModelQueuePilotPanel
           getScene={() => sceneRef.current}
           getDocument={() => sceneRef.current ? {
