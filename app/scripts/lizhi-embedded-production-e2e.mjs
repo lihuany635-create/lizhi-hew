@@ -15,7 +15,7 @@ try {
   const frame=page.frameLocator('#hew-frame')
   await frame.getByRole('button',{name:'連線 AI（30 分鐘）'}).waitFor({timeout:25000})
   await frame.getByRole('button',{name:'連線 AI（30 分鐘）'}).click()
-  await expect(frame.getByRole('status')).toContainText('已連線 30 分鐘',{timeout:10000})
+  await frame.getByRole('button',{name:'斷開 AI 連線'}).waitFor({timeout:10000})
   if(await frame.getByRole('button',{name:'領取並處理一筆工作'}).count()!==0)
     throw Error('Unexpected second manual queue button')
   await expect(frame.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:10000})
