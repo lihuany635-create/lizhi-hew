@@ -18,7 +18,14 @@ try {
   await frame.getByRole('button',{name:'斷開 AI 連線'}).waitFor({timeout:10000})
   if(await frame.getByRole('button',{name:'領取並處理一筆工作'}).count()!==0)
     throw Error('Unexpected second manual queue button')
-  await expect(frame.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:10000})
+  // Put the Hew-containing tab in the background while the claim is in flight.
+  // requestAnimationFrame is intentionally paused in background tabs.
+  const other=await ctx.newPage()
+  await other.goto(ORIGIN+'/hew-editor/?lizhi-model-queue=1',{waitUntil:'domcontentloaded'})
+  await other.bringToFront()
+  const hidden=await page.evaluate(()=>document.visibilityState==='hidden')
+  if(!hidden)throw Error('Did not actually background the Hew page')
+  await expect(frame.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:25000})
   const trace=await page.evaluate(()=>window.__lizhiEmbedTrace)
   const calls=trace.map(x=>x.name)
   for(const required of ['lizhi_model_begin','lizhi_model_heartbeat','lizhi_model_claim','lizhi_model_finish'])
@@ -28,11 +35,9 @@ try {
     ack.params.p_new_revision===trace[0].params.p_revision)throw Error('Unverified model revision ACK')
   if(calls.filter(x=>x==='lizhi_model_claim').length!==1)throw Error('Claim duplicated')
   if(!wasmOk.length)throw Error('No native Hew WASM response was loaded')
-  const other=await ctx.newPage()
-  await other.goto(ORIGIN+'/hew-editor/?lizhi-model-queue=1',{waitUntil:'domcontentloaded'})
   if(await other.getByRole('button',{name:'連線 AI（30 分鐘）'}).count()!==0)
     throw Error('Standalone production window improperly exposed queue')
   console.log('LIZHI_HEW_SAME_ORIGIN_PRODUCTION_BUNDLE_CHROMIUM_PASS',JSON.stringify({
-    wasmLoaded:wasmOk.length>0,rpcs:calls,standaloneDenied:true,
+    wasmLoaded:wasmOk.length>0,rpcs:calls,standaloneDenied:true,backgroundHiddenVerified:hidden,
   }))
 }finally {await browser.close()}
