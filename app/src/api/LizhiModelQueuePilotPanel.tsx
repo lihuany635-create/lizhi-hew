@@ -87,14 +87,11 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
         pageVisible:()=>document.documentElement.isConnected && !window.closed,
         now:()=>Date.now(),uuid:()=>crypto.randomUUID(),
         confirmCommittedRevision:async(previous)=>{
-          // Wait for the authoritative Hew App's revision after viewport refresh.
-          // Never fabricate a new revision to force a successful database ACK.
-          for(let i=0;i<12;i++){
-            const current=latest.current.getDocument()
-            if(current&&current.revision!==previous)return current.revision
-            await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))
-          }
-          return null
+          // App.refreshScene synchronously flushes the authoritative
+          // document revision. RAF callbacks do not run in background tabs,
+          // so never await requestAnimationFrame during a 30-minute session.
+          const current=latest.current.getDocument()
+          return current&&current.revision!==previous?current.revision:null
         },
         readSceneEntities:async()=>{
           // Query the SAME trusted WASM Scene after the committed revision ACK.
