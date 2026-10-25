@@ -22,7 +22,14 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
   const latest=useRef(props)
   latest.current=props
   const queueRef=useRef<ReturnType<typeof createLizhiModelQueue>|null>(null)
+  const pollTimer=useRef<ReturnType<typeof setInterval>|null>(null)
+  const polling=useRef(false)
+  const stopTimer=()=>{
+    if(pollTimer.current!==null)clearInterval(pollTimer.current)
+    pollTimer.current=null
+  }
   async function close(){
+    stopTimer()
     const queue=queueRef.current
     queueRef.current=null
     setActive(false)
@@ -31,16 +38,11 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
   useEffect(()=>{
     const onLeave=()=>{ void close() }
     window.addEventListener('pagehide',onLeave)
-    const onHide=()=>{
-      if(document.visibilityState!=='visible'){
-        void close()
-        setStatus('背景分頁：授權已撤銷')
-      }
-    }
-    document.addEventListener('visibilitychange',onHide)
+    // Switching between ChatGPT and Hew tabs MUST NOT revoke consent.
+    // Closing/navigating the actual Hew document always revokes the session.
     return ()=>{
       window.removeEventListener('pagehide',onLeave)
-      document.removeEventListener('visibilitychange',onHide)
+      stopTimer()
       if(queueRef.current)void queueRef.current.revoke()
       queueRef.current=null
     }
@@ -80,7 +82,9 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
         rpc:adapter.rpc,host,
         verifyAuthenticatedOwner:adapter.verifyAuthenticatedOwner,
         getDocument:()=>latest.current.getDocument(),
-        pageVisible:()=>document.visibilityState==='visible',
+        // A background tab remains authorized while OPEN, up to 30 minutes.
+        // Server-side freshness checks still fail closed if the browser sleeps.
+        pageVisible:()=>document.documentElement.isConnected && !window.closed,
         now:()=>Date.now(),uuid:()=>crypto.randomUUID(),
         confirmCommittedRevision:async(previous)=>{
           // Wait for the authoritative Hew App's revision after viewport refresh.
@@ -128,26 +132,47 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
       }
       queueRef.current=queue
       setActive(true)
-      setStatus('已授權 120 秒，僅能主動領取一次；離開本頁自動關閉')
+      setStatus('已連線 30 分鐘｜等待 ChatGPT 指令（不需再按領取）')
+      // Bounded read/claim loop, never an automatic consent renewal.
+      // One job at a time; unknown results stop the loop without replay.
+      pollTimer.current=setInterval(()=>{void processPending()},10_000)
+      void processPending()
     }catch {setStatus('認證或授權失敗；不執行任何 3D 命令')}
     finally {setBusy(false)}
   }
-  async function poll(){
-    if(busy||!queueRef.current)return
-    setBusy(true)
+  async function processPending(){
+    const queue=queueRef.current
+    if(!queue||polling.current)return
+    polling.current=true
     try {
-      const answer=await queueRef.current.pollOne()
-      setStatus(answer.state==='succeeded'?
-        'Hew 幾何交易完成並確認 DB ACK；尚未存檔 .hew':
-        answer.state==='idle'?'目前沒有待處理的模型工作':
-        answer.state==='unknown'?'結果不明，已停止後續領取；請人工檢查模型':
-        answer.state==='failed'?'Hew 明確拒絕：'+answer.code:
-        '已停止：'+answer.code)
-      if(!queueRef.current.isAuthorized()) {
-        void close()
+      const answer=await queue.pollOne()
+      if(queue!==queueRef.current)return
+      if(answer.state==='succeeded'){
+        setStatus('Hew 幾何交易完成且已確認 ACK；模型尚未存檔 .hew')
+      }else if(answer.state==='failed'){
+        setStatus('模型工作被拒絕：'+answer.code+'；仍可接收下一筆')
+      }else if(answer.state==='unknown'||answer.state==='rejected'){
+        await close()
+        setStatus(answer.state==='unknown'?
+          '工作結果不明：已斷線、禁止重試；請檢查目前模型':
+          '授權到期、登入失效或文件變更：已斷線')
       }
-    }catch{setStatus('結果不明，禁止自動重試');void close()}
-    finally{setBusy(false)}
+      // idle intentionally preserves the connection status.
+    }catch{
+      await close()
+      setStatus('工作結果不明：已斷線、禁止自動重試')
+    }finally{polling.current=false}
+  }
+  async function toggle(){
+    if(busy)return
+    if(queueRef.current){
+      setBusy(true)
+      await close()
+      setBusy(false)
+      setStatus('已手動斷開 AI 連線')
+    }else{
+      await approve()
+    }
   }
   return <aside aria-label="Lizhi model authenticated queue pilot" style={{
     position:'absolute',bottom:18,right:328,zIndex:501,
@@ -155,10 +180,10 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
     border:'1px solid #777',borderRadius:10,width:300,padding:12,display:'grid',gap:8,
   }}>
     <strong>立之 3D｜ChatGPT 工作授權</strong>
-    <small>必須使用雲端庫同源本人登入；一次授權 120 秒，工作只手動領取。不保證 .hew 已儲存。</small>
-    <button type="button" onClick={()=>{void approve()}} disabled={active||busy}>本人授權 120 秒</button>
-    <button type="button" onClick={()=>{void poll()}} disabled={!active||busy}>領取並處理一筆工作</button>
-    <button type="button" onClick={()=>{void close()}} disabled={!active||busy}>撤銷 3D 操作權限</button>
+    <small>按一次連線 30 分鐘，自動接收 ChatGPT 指令；同一按鈕可隨時斷線。關閉頁面或到期即停止，不會自動續期。</small>
+    <button type="button" onClick={()=>{void toggle()}} disabled={busy}>
+      {active?'斷開 AI 連線':'連線 AI（30 分鐘）'}
+    </button>
     <small role="status">{status}</small>
   </aside>
 }
