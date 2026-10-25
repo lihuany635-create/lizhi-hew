@@ -105,7 +105,7 @@ jobs:
             if curl --fail --silent http://127.0.0.1:4187/index.html > /dev/null; then break; fi
             sleep 1
           done
-          node app/scripts/lizhi-embedded-production-e2e.mjs
+          LIZHI_HEADFUL=1 xvfb-run -a node app/scripts/lizhi-embedded-production-e2e.mjs
       - name: Upload same-origin Hew iframe bundle candidate (NOT deployed)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
