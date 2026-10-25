@@ -15,9 +15,12 @@ on:
       - 'app/src/App.tsx'
       - 'app/e2e/lizhi-model-queue-auth-gate.spec.ts'
       - 'app/e2e/lizhi-model-queue-mocked-rpc.spec.ts'
-      - 'docs/lizhi-model/**'
       - '.github/workflows/lizhi-model-host-ci.yml'
   workflow_dispatch:
+concurrency:
+  group: lizhi-model-host-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
