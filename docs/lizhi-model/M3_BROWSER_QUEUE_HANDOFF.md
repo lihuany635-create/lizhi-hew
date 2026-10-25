@@ -41,4 +41,22 @@
 | 一般 ChatGPT 載入 3D 私人 MCP 六工具 | NOT_TESTED |
 | .hew 儲存／重新開啟與 CADCraft /工程中心入口整合 | NOT_TESTED |
 
-**注意**：在 M3 完成全部實際授權／網路整合前，不要合併 main、不要開放任意編輯、不要將模型原始檔上傳雲端、也不要把隔離 CI 誤作正式已上線。 
+**注意**：在 M3 完成全部實際授權／網路整合前，不要合併 main、不要開放任意編輯、不要將模型原始檔上傳雲端、也不要把隔離 CI 誤作正式已上線。
+
+## M3 DEV UI：僅具同源 Auth 時可人工驗證
+
+- `app/src/api/LizhiModelQueuePilotPanel.tsx`、`App.tsx`：加入 **DEV 模式且需 URL 參數 `lizhi-model-queue-pilot`** 才渲染的佇列驗證面板。只有此頁本身確實存在 `window.LizhiAuth.client` 且提供 `allowedEmail` 才能啟動；取得 Supabase `auth.getUser()`、比對帳號允許清單後再發出 begin。
+- 按鈕要求本人明確同意 120 秒、手動領取一筆、隨時撤銷；分頁隱藏時撤銷；不會背景監聽、不會顯示或收集 bearer 字串。
+- App 為當前文件生命週期建立每頁 UUID，`revision` 取自真實 Hew App `docGeneration:docRev`，並等待 viewport 更新後的修訂值才上報交易成功。**此 UUID 暫不跨重新載入儲存，不能當作正式模型檔案 ID**。
+- 模型 scene summary 的實際投影讀取尚未實作；程式對 `readSceneEntities()` 明確 throw，避免偷偷發佈空物件清單而覆寫歷史。
+- `app/e2e/lizhi-model-queue-auth-gate.spec.ts`：在沒有同源 Auth 的 Chromium 瀏覽器確認頁面拒絕操作。
+- `app/e2e/lizhi-model-queue-mocked-rpc.spec.ts`：**模擬** same-origin Supabase Auth/RPC 回覆，但真正用 Chromium 的 Hew WASM 執行幾何建立並查驗封閉體、尺寸、1 次 claim 與真實 doc revision ACK。此測試是 mock DB，**不是正式 Supabase 網路端到端**。
+- 完整 CI 的真 Rust/WASM build、上述兩項 Playwright 與先前單機 pilot 回歸，以最新隔離 Workflow 結果為準。不能因為已有測試原始碼就標記通過。
+
+### 真正上線時必須替換的部分
+
+1. DEV Gate 不能直接改成 production：要先決定 Hew 的 HTTPS 正式 origin、可用的 Supabase OAuth callback，並整合真正的本人 account allowlist。不同 origin 的`window.LizhiAuth` 不能假裝可直接取得；禁止從跨網站 iframe 傳 access token。
+2. 將每頁 UUID 與受保存 .hew 文件 ID、原生 revision 關聯，補離線/換檔/Undo/Reload 驗收。
+3. 把正式模型 scene 摘要（有限 id/name/kind）依同一 Scene 查詢後發送，完成 durable .hew save ACK。
+4. 在正式 Supabase 部署隔離 SQL/Edge 並設定獨立 Server Secret；建立私人 Site MCP；最後在一般 ChatGPT 中完成 6 工具真實載入與 E2E。
+
