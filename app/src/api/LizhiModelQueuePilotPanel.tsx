@@ -59,6 +59,10 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
         setStatus('缺少同源驗證登入；不可使用跨來源傳送 Token')
         return
       }
+      if(typeof session.allowedEmail!=='string' || !session.allowedEmail.includes('@')) {
+        setStatus('未配置可核對的帳號白名單；禁止授權')
+        return
+      }
       const {data,error}=await session.client.auth.getUser()
       if(error||!data?.user?.id){setStatus('尚未通過 Supabase 本人驗證');return}
       const adapter=createLizhiModelAuthAdapter(session.client,{
