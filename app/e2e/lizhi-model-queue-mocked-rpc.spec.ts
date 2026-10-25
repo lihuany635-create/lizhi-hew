@@ -82,4 +82,9 @@ test('M3 browser queue: mocked verified Supabase Auth/RPC -> actual Hew WASM sol
   expect(typeof ack?.params.p_new_revision).toBe('string')
   expect(ack?.params.p_new_revision).not.toBe(trace[0]?.params.p_revision)
   expect(trace.filter(x=>x.name==='lizhi_model_claim')).toHaveLength(1)
+  const snapshot=trace.find(x=>x.name==='lizhi_model_publish_scene')
+  expect(snapshot).toBeDefined()
+  expect(Array.isArray(snapshot?.params.p_entities)).toBe(true)
+  const entities=snapshot?.params.p_entities as Array<{id:string;name:string;kind:string}>
+  expect(entities.some(x=>x.id.startsWith('obj_')&&x.kind==='object')).toBe(true)
 })
