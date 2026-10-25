@@ -72,6 +72,7 @@ import { LogPanel } from './log/LogPanel'
 import * as LogStore from './log/LogStore'
 import { installTestHarness, type PrintRecorder } from './test/harness'
 import { installLiveBridge, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
+import { LizhiModelPilotPanel } from './api/LizhiModelPilotPanel'
 import { install as installConsoleCapture, restore as restoreConsoleCapture } from './log/consoleCapture'
 import { MATERIAL_SENTINEL } from './tools/PaintTool'
 import { outlinerDrawing, resolveDraft, setKernelHidden, type OutlinerDrawing, type PlaneUnitsScene } from './tools/planeUnits'
@@ -608,6 +609,9 @@ export default function App() {
   // so material #1 of document B collides with the cached handle of material
   // #1 of document A (audit q-web-robustness).
   const [docGeneration, setDocGeneration] = useState(0)
+  // Diagnostic 3D host uses one real App revision per document generation.
+  const lizhiDocumentRevRef = useRef({ generation: docGeneration, revision: docRev })
+  lizhiDocumentRevRef.current = { generation: docGeneration, revision: docRev }
   /** Currently selected material id for the Paint tool. */
   const [currentMaterialId, setCurrentMaterialId] = useState<bigint>(MATERIAL_SENTINEL)
   // Picking a material makes it current AND activates the Paint tool, so the
@@ -7064,6 +7068,19 @@ export default function App() {
         background: 'var(--surface-canvas-page, #1a1a1a)',
       }}
     >
+      {/* Explicit browser-side pilot only in local developer builds.
+          No network, no MCP and no outside event listener. User must opt in. */}
+      {import.meta.env.DEV && new URLSearchParams(window.location.search).has('lizhi-model-pilot') && (
+        <LizhiModelPilotPanel
+          getScene={() => sceneRef.current}
+          getRevision={() => `${lizhiDocumentRevRef.current.generation}:${lizhiDocumentRevRef.current.revision}`}
+          refreshScene={() => {
+            if (viewportApi.current !== null) viewportApi.current.refreshScene()
+            else reconcileRef.current()
+          }}
+        />
+      )}
+
       {/* Linux desktop shell only: borderless window → draw our own title bar
           (KWin/WebKitGTK won't repaint the native one after setTitle). Windows
           and macOS keep native decorations, so their OS caption (which reflects
