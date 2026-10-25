@@ -153,7 +153,7 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
         // Claimed jobs cannot be automatically replayed. A bad claim is
         // reported as unknown for manual inspection; never run its command.
         return uncertain('MODEL_INVALID_CLAIM_DO_NOT_RETRY',
-          typeof claim.job_id==='string'?claim.job_id:undefined)
+          object(claim) && typeof claim.job_id==='string' ? claim.job_id : undefined)
       }
       const jobId=claim.job_id as string
       received.add(claim.request_id as string)
