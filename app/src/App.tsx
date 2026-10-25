@@ -73,6 +73,7 @@ import * as LogStore from './log/LogStore'
 import { installTestHarness, type PrintRecorder } from './test/harness'
 import { installLiveBridge, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
 import { LizhiModelPilotPanel } from './api/LizhiModelPilotPanel'
+import { LizhiModelQueuePilotPanel } from './api/LizhiModelQueuePilotPanel'
 import { install as installConsoleCapture, restore as restoreConsoleCapture } from './log/consoleCapture'
 import { MATERIAL_SENTINEL } from './tools/PaintTool'
 import { outlinerDrawing, resolveDraft, setKernelHidden, type OutlinerDrawing, type PlaneUnitsScene } from './tools/planeUnits'
@@ -612,6 +613,13 @@ export default function App() {
   // Diagnostic 3D host uses one real App revision per document generation.
   const lizhiDocumentRevRef = useRef({ generation: docGeneration, revision: docRev })
   lizhiDocumentRevRef.current = { generation: docGeneration, revision: docRev }
+  // Stable per-document tab identity for M3 DEV queue testing. A page reload
+  // requires a fresh 120-second authorization; this is NOT persisted document ID.
+  const lizhiQueueIdentityRef = useRef<{generation:number;id:string}|null>(null)
+  if(!lizhiQueueIdentityRef.current ||
+     lizhiQueueIdentityRef.current.generation!==docGeneration) {
+    lizhiQueueIdentityRef.current={generation:docGeneration,id:crypto.randomUUID()}
+  }
   /** Currently selected material id for the Paint tool. */
   const [currentMaterialId, setCurrentMaterialId] = useState<bigint>(MATERIAL_SENTINEL)
   // Picking a material makes it current AND activates the Paint tool, so the
@@ -7076,6 +7084,23 @@ export default function App() {
           getRevision={() => `${lizhiDocumentRevRef.current.generation}:${lizhiDocumentRevRef.current.revision}`}
           refreshScene={() => {
             if (viewportApi.current !== null) viewportApi.current.refreshScene()
+            else reconcileRef.current()
+          }}
+        />
+      )}
+
+      {/* M3 authenticated job bridge is deliberately DEV-only and only
+          becomes usable with a trusted SAME-ORIGIN LizhiAuth client. Never
+          pass the user's JWT through cross-origin iframe messages. */}
+      {import.meta.env.DEV && new URLSearchParams(window.location.search).has('lizhi-model-queue-pilot') && (
+        <LizhiModelQueuePilotPanel
+          getScene={() => sceneRef.current}
+          getDocument={() => sceneRef.current ? {
+            document_id:lizhiQueueIdentityRef.current!.id,
+            revision:`${lizhiDocumentRevRef.current.generation}:${lizhiDocumentRevRef.current.revision}`,
+          } : null}
+          refreshScene={() => {
+            if(viewportApi.current!==null)viewportApi.current.refreshScene()
             else reconcileRef.current()
           }}
         />
