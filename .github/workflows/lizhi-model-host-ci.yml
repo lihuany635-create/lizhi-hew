@@ -73,6 +73,26 @@ jobs:
         env:
           CI: '1'
         run: pnpm --dir app exec playwright test e2e/lizhi-model-pilot.spec.ts e2e/lizhi-model-queue-auth-gate.spec.ts e2e/lizhi-model-queue-mocked-rpc.spec.ts --project=chromium
+      - name: Build same-origin Hew iframe asset candidate (relative base)
+        run: pnpm --dir app exec vite build --base=./
+      - name: Verify nested relative bundle links, no token exposure
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('app/dist/index.html').read_text(encoding='utf-8')
+          assert 'src="./assets/' in src, 'Nested iframe must NOT assume root /assets/'
+          assert 'href="./assets/' in src
+          assert 'SUPABASE_SERVICE_ROLE_KEY' not in src
+          assert 'LIZHI_MODEL_SITE_MCP_TOKEN' not in src
+          assert list(Path('app/dist').rglob('*.wasm')), 'Native Hew WASM missing'
+          print('LIZHI_HEW_RELATIVE_EMBED_BUNDLE_PASS')
+          PY
+      - name: Upload same-origin Hew iframe bundle candidate (NOT deployed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lizhi-hew-same-origin-embed-dist
+          path: app/dist
+          if-no-files-found: error
       - name: Publish isolated compiled web artifact (NOT a site deployment)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
