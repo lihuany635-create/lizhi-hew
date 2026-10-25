@@ -1,12 +1,13 @@
 /**
  * Lizhi Model M3 browser job orchestrator.
  *
- * Runs within Hew's first-party tab. No service-role key, Edge secret, automatic
- * timer, localStorage token or cross-origin message listener. An application
+ * Runs within Hew's first-party tab. No service-role key, Edge secret,
+ * localStorage token or cross-origin message listener. A connected UI may
+ * automatically poll pending work under a bounded explicit 30-minute lease. An application
  * controller must supply a Supabase PostgREST client with a VERIFIED user's
  * JWT, plus user-gesture consent and live same-Scene document identity.
  *
- * PROPOSAL ONLY: not connected to production auth, not mounted in Hew UI.
+ * The production UI must receive auth only from the verified same-origin parent.
  * The scene host commits WASM geometry; persistence to a .hew file is separate.
  */
 import type { ClaimedModelJob, LocalModelReceipt } from './lizhiModelBrowserHost'
@@ -25,6 +26,7 @@ export interface ModelJobEnvironment {
   // MUST validate Supabase auth.getUser() against the actual server.
   verifyAuthenticatedOwner(): Promise<boolean>
   getDocument(): DocumentIdentity | null
+  // Frame still open/mounted; background tabs ARE allowed within the lease.
   pageVisible(): boolean
   now(): number
   uuid(): string
@@ -41,7 +43,8 @@ export type QueueOutcome =
   | { state: 'succeeded'; job_id: string; revision: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const MAX_CONSENT_MS = 120_000
+// Explicit consent is a fixed 30 minutes. Heartbeats never renew this deadline.
+const MAX_CONSENT_MS = 30 * 60_000
 const MAX_RPC_CHARS = 8192
 const validRevision = (s: unknown): s is string =>
   typeof s === 'string' && s.length > 0 && s.length <= 128
