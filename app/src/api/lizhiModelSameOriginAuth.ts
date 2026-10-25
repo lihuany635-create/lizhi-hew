@@ -17,7 +17,7 @@ type AuthWindow = Window & { LizhiAuth?: LizhiModelAuthHost }
 function validHost(auth: LizhiModelAuthHost | undefined): auth is LizhiModelAuthHost {
   return !!auth &&
     typeof auth.allowedEmail === 'string' &&
-    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(auth.allowedEmail) &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(auth.allowedEmail) &&
     typeof auth.client?.auth?.getUser === 'function' &&
     typeof auth.client?.rpc === 'function'
 }
