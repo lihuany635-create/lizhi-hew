@@ -10,7 +10,7 @@ on:
       - 'app/src/api/lizhiModelQueue.ts'
       - 'app/src/api/lizhiModelQueue.test.ts'
       - 'app/src/api/lizhiModelAuthAdapter.ts'
-      - 'app/src/api/lizhiModelAuthAdapter.test.ts src/api/lizhiModelSameOriginAuth.test.ts'
+      - 'app/src/api/lizhiModelAuthAdapter.test.ts'
       - 'app/src/api/lizhiModelSameOriginAuth.ts'
       - 'app/src/api/lizhiModelSameOriginAuth.test.ts'
       - 'app/scripts/lizhi-embedded-production-e2e.mjs'
@@ -43,7 +43,7 @@ jobs:
       - name: Install lockfile dependencies
         run: pnpm install --frozen-lockfile
       - name: Lizhi browser host safety tests
-        run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts src/api/lizhiModelQueue.test.ts src/api/lizhiModelAuthAdapter.test.ts
+        run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts src/api/lizhiModelQueue.test.ts src/api/lizhiModelAuthAdapter.test.ts src/api/lizhiModelSameOriginAuth.test.ts
   hew-web-build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
