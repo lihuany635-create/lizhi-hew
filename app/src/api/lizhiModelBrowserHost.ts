@@ -56,7 +56,7 @@ const safe = (n: unknown, max: number) =>
 const obj = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v)
 const keys = (v: Record<string, unknown>, required: string[], optional: string[] = []) =>
-  required.every(k => Object.hasOwn(v, k)) &&
+  required.every(k => Object.prototype.hasOwnProperty.call(v, k)) &&
   Object.keys(v).every(k => required.includes(k) || optional.includes(k))
 const vec = (v: unknown, max: number) =>
   Array.isArray(v) && v.length === 3 && v.every(n => safe(n, max))
