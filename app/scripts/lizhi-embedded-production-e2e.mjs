@@ -1,7 +1,7 @@
 /** Production BUNDLE smoke, NOT real Supabase: same-origin iframe + mock owner RPC
  * + real Hew WASM kernel. Run only after vite build --base=./ has completed.
  */
-import {chromium} from '@playwright/test'
+import {chromium,expect} from '@playwright/test'
 const ORIGIN='http://127.0.0.1:4187'
 const browser=await chromium.launch({headless:true,args:[
   '--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader'
@@ -15,9 +15,9 @@ try {
   const frame=page.frameLocator('#hew-frame')
   await frame.getByRole('button',{name:'本人授權 120 秒'}).waitFor({timeout:25000})
   await frame.getByRole('button',{name:'本人授權 120 秒'}).click()
-  await frame.getByRole('status').getByText('已授權 120 秒',{exact:false}).waitFor({timeout:10000})
+  await expect(frame.getByRole('status')).toContainText('已授權 120 秒',{timeout:10000})
   await frame.getByRole('button',{name:'領取並處理一筆工作'}).click()
-  await frame.getByRole('status').getByText('Hew 幾何交易完成',{exact:false}).waitFor({timeout:10000})
+  await expect(frame.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:10000})
   const trace=await page.evaluate(()=>window.__lizhiEmbedTrace)
   const calls=trace.map(x=>x.name)
   for(const required of ['lizhi_model_begin','lizhi_model_heartbeat','lizhi_model_claim','lizhi_model_finish'])
