@@ -1,21 +1,14 @@
 /**
- * Optional, DEV-ONLY, explicit-click model queue panel for a SAME-ORIGIN
- * first-party LizhiAuth client. This does not transfer any session token.
- *
- * In the standalone Hew fork window.LizhiAuth normally does not exist, so
- * this panel fails closed. DO NOT add cross-origin postMessage token passing.
- * Never enable without a production auth/scene/SQL end-to-end review.
+ * Explicit-click model queue panel. Production MUST run under an embedded
+ * same-origin authenticated Lizhi Cloud parent; standalone production cannot
+ * provide a spoofable window.LizhiAuth object. The existing DEV-only mock
+ * remains solely for isolated Chromium tests. No JWT forwarding/postMessage.
  */
 import {useEffect,useRef,useState} from 'react'
 import {createLizhiModelHost,type ModelSceneDispatcher} from './lizhiModelBrowserHost'
 import {createLizhiModelQueue,type DocumentIdentity} from './lizhiModelQueue'
-import {createLizhiModelAuthAdapter,type UserAuthenticatedSupabaseClient} from './lizhiModelAuthAdapter'
-
-interface LizhiAuthHost {
-  client:UserAuthenticatedSupabaseClient
-  allowedEmail?:string
-}
-type AuthWindow=Window & {LizhiAuth?:LizhiAuthHost}
+import {createLizhiModelAuthAdapter} from './lizhiModelAuthAdapter'
+import {sameOriginParentLizhiAuth,devStandaloneLizhiAuth} from './lizhiModelSameOriginAuth'
 
 export interface LizhiModelQueuePilotProps {
   getScene():ModelSceneDispatcher|null
@@ -36,6 +29,8 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
     if(queue)await queue.revoke()
   }
   useEffect(()=>{
+    const onLeave=()=>{ void close() }
+    window.addEventListener('pagehide',onLeave)
     const onHide=()=>{
       if(document.visibilityState!=='visible'){
         void close()
@@ -44,6 +39,7 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
     }
     document.addEventListener('visibilitychange',onHide)
     return ()=>{
+      window.removeEventListener('pagehide',onLeave)
       document.removeEventListener('visibilitychange',onHide)
       if(queueRef.current)void queueRef.current.revoke()
       queueRef.current=null
@@ -54,7 +50,7 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
     if(busy||queueRef.current)return
     setBusy(true)
     try {
-      const session=(window as AuthWindow).LizhiAuth
+      const session=sameOriginParentLizhiAuth(window)??devStandaloneLizhiAuth(window)
       if(!session?.client?.auth?.getUser||!session.client.rpc) {
         setStatus('缺少同源驗證登入；不可使用跨來源傳送 Token')
         return
@@ -134,8 +130,8 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
     background:'var(--surface-overlay,#222)',color:'var(--text-primary,#fff)',
     border:'1px solid #777',borderRadius:10,width:300,padding:12,display:'grid',gap:8,
   }}>
-    <strong>立之 3D｜登入佇列驗證（開發版）</strong>
-    <small>未部署正式 Edge / Site；需要同源本人 Supabase 登入，不接受貼 Token。</small>
+    <strong>立之 3D｜ChatGPT 工作授權</strong>
+    <small>必須使用雲端庫同源本人登入；一次授權 120 秒，工作只手動領取。不保證 .hew 已儲存。</small>
     <button type="button" onClick={()=>{void approve()}} disabled={active||busy}>本人授權 120 秒</button>
     <button type="button" onClick={()=>{void poll()}} disabled={!active||busy}>領取並處理一筆工作</button>
     <button type="button" onClick={()=>{void close()}} disabled={!active||busy}>撤銷 3D 操作權限</button>
