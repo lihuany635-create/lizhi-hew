@@ -53,10 +53,11 @@ test('M3 browser queue: mocked verified Supabase Auth/RPC -> actual Hew WASM sol
   })).toBe(true)
   const panel=page.getByRole('complementary',{name:'Lizhi model authenticated queue pilot'})
   await expect(panel).toBeVisible()
-  await panel.getByRole('button',{name:'本人授權 120 秒'}).click()
-  await expect(panel.getByRole('status')).toContainText('已授權 120 秒')
-  await panel.getByRole('button',{name:'領取並處理一筆工作'}).click()
-  await expect(panel.getByRole('status')).toContainText('Hew 幾何交易完成')
+  await panel.getByRole('button',{name:'連線 AI（30 分鐘）'}).click()
+  await expect(panel.getByRole('status')).toContainText('已連線 30 分鐘')
+  // No second button: the owner-approved queue claims automatically.
+  await expect(panel.getByRole('button',{name:'領取並處理一筆工作'})).toHaveCount(0)
+  await expect(panel.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:20000})
   const scene=await page.evaluate(()=>{
     const h=(window as Window & {__hew_test?:{
       getObjectIds():string[]
