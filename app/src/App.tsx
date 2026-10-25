@@ -7104,8 +7104,13 @@ export default function App() {
             revision:`${lizhiDocumentRevRef.current.generation}:${lizhiDocumentRevRef.current.revision}`,
           } : null}
           refreshScene={() => {
-            if(viewportApi.current!==null)viewportApi.current.refreshScene()
-            else reconcileRef.current()
+            // Job ACK must work while the Hew tab is in the background.
+            // Flush the authoritative App document revision synchronously
+            // with the real WASM scene refresh; background RAF is paused.
+            flushSync(() => {
+              if(viewportApi.current!==null)viewportApi.current.refreshScene()
+              else reconcileRef.current()
+            })
           }}
         />
       )}
