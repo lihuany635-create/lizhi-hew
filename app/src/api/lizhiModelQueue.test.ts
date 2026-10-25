@@ -146,7 +146,10 @@ describe('M3 Lizhi model browser queue (isolated authenticated RPC mock)',()=>{
     const f=fixture();await f.queue.authorizeFromUserClick();f.setJob(claimed())
     f.setRpcFailure('lizhi_model_finish')
     expect((await f.queue.pollOne()).state).toBe('unknown')
-    expect((await f.queue.pollOne()).state).toBe('unknown')
+    // The WASM document revision changed, but the DB ACK was lost. The next
+    // poll must revoke consent instead of replaying or claiming another job.
+    expect((await f.queue.pollOne()).state).toBe('rejected')
+    expect(f.queue.isAuthorized()).toBe(false)
     expect(f.execute).toHaveBeenCalledOnce()
   })
 })
