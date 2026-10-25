@@ -1,8 +1,6 @@
-# Lizhi model host: isolated tests only (no deployment)
-# This fork's normal ci.yml runs the full Hew build on main and PRs.
-# Test only the added first-party boundary on this development branch.
+# Lizhi model host: isolated tests + actual Hew web build; never deploy.
+# Upstream's standard ci.yml also handles broader releases and PR gates.
 name: Lizhi model browser host M1
-
 on:
   push:
     branches: [feature/lizhi-model-browser-host-v1]
@@ -12,16 +10,14 @@ on:
       - 'docs/lizhi-model/**'
       - '.github/workflows/lizhi-model-host-ci.yml'
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   host-unit-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout pinned branch
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -29,7 +25,33 @@ jobs:
           node-version-file: .node-version
       - name: pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-      - name: Install lockfile deps
+      - name: Install lockfile dependencies
         run: pnpm install --frozen-lockfile
       - name: Lizhi browser host safety tests
         run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts
+  hew-web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pinned Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install pinned wasm-pack
+        run: scripts/install-wasm-pack.sh
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build actual Hew WASM and full browser app
+        run: pnpm --dir app build
+      - name: Publish isolated compiled web artifact (NOT a site deployment)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lizhi-hew-web-dist
+          path: app/dist
+          if-no-files-found: error
