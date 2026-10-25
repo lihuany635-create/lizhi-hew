@@ -18,18 +18,27 @@ try {
   await frame.getByRole('button',{name:'斷開 AI 連線'}).waitFor({timeout:10000})
   if(await frame.getByRole('button',{name:'領取並處理一筆工作'}).count()!==0)
     throw Error('Unexpected second manual queue button')
-  // Put the Hew-containing tab in the background while the claim is in flight.
-  // requestAnimationFrame is intentionally paused in background tabs.
+  // Deterministic regression for Chrome's background-tab RAF starvation:
+  // Playwright contexts report every page as visible even in headed Xvfb.
+  // Override the SAME-ORIGIN Hew iframe's visibility to hidden, suppress RAF,
+  // then ensure the model job still commits + ACKs without an animation frame.
+  const paused=await page.evaluate(()=>{
+    const node=document.querySelector('#hew-frame')
+    const child=node?.contentWindow
+    if(!child)throw Error('Missing same-origin Hew editor iframe')
+    child.requestAnimationFrame=()=>0
+    Object.defineProperty(child.document,'visibilityState',{
+      configurable:true,get:()=> 'hidden'
+    })
+    child.document.dispatchEvent(new child.Event('visibilitychange'))
+    return child.document.visibilityState==='hidden' &&
+      child.requestAnimationFrame(()=>{})===0
+  })
+  if(!paused)throw Error('Simulated hidden iframe / stalled RAF guard failed')
   const other=await ctx.newPage()
   await other.goto(ORIGIN+'/hew-editor/?lizhi-model-queue=1',{waitUntil:'domcontentloaded'})
   await other.bringToFront()
-  // Real headed tabs under xvfb expose actual visibility transitions.
-  // Headless Playwright documents every page as focused/visible, so it is
-  // insufficient for this specific background-ACK regression.
-  await expect.poll(()=>page.evaluate(()=>document.visibilityState),{
-    timeout:6000,intervals:[100,250,500]
-  }).toBe('hidden')
-  const hidden=true
+  const hidden=paused
   await expect(frame.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:25000})
   const trace=await page.evaluate(()=>window.__lizhiEmbedTrace)
   const calls=trace.map(x=>x.name)
@@ -43,6 +52,6 @@ try {
   if(await other.getByRole('button',{name:'連線 AI（30 分鐘）'}).count()!==0)
     throw Error('Standalone production window improperly exposed queue')
   console.log('LIZHI_HEW_SAME_ORIGIN_PRODUCTION_BUNDLE_CHROMIUM_PASS',JSON.stringify({
-    wasmLoaded:wasmOk.length>0,rpcs:calls,standaloneDenied:true,backgroundHiddenVerified:hidden,
+    wasmLoaded:wasmOk.length>0,rpcs:calls,standaloneDenied:true,backgroundHiddenSimulated:hidden,rafBlocked:true,
   }))
 }finally {await browser.close()}
