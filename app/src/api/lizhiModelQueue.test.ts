@@ -62,7 +62,7 @@ describe('M3 Lizhi model browser queue (isolated authenticated RPC mock)',()=>{
     f.setAuth(true)
     expect(await f.queue.authorizeFromUserClick()).toBe(true)
     expect(f.queue.isAuthorized()).toBe(true)
-    expect(f.queue.getLease()?.consent_expires_at_ms).toBe(121000)
+    expect(f.queue.getLease()?.consent_expires_at_ms).toBe(1801000)
     expect(f.calls.map(c=>c.name)).toEqual(['lizhi_model_begin'])
   })
   it('only polls one time when explicitly invoked; no timers or extra jobs',async()=>{
@@ -105,7 +105,7 @@ describe('M3 Lizhi model browser queue (isolated authenticated RPC mock)',()=>{
     expect((await g.queue.pollOne()).state).toBe('unknown')
     expect(g.execute).not.toHaveBeenCalled()
   })
-  it('rejects a hidden tab, changed current document or expired two-minute consent',async()=>{
+  it('rejects a hidden tab, changed current document or expired thirty-minute consent',async()=>{
     const f=fixture();await f.queue.authorizeFromUserClick()
     f.setVisible(false)
     expect((await f.queue.pollOne()).state).toBe('rejected')
@@ -115,9 +115,21 @@ describe('M3 Lizhi model browser queue (isolated authenticated RPC mock)',()=>{
     g.setDoc({document_id:DOC,revision:'r3'})
     expect((await g.queue.pollOne()).state).toBe('rejected')
     const h=fixture();await h.queue.authorizeFromUserClick()
-    h.setNow(121000)
+    h.setNow(1801000)
     expect((await h.queue.pollOne()).state).toBe('rejected')
     expect(f.execute).not.toHaveBeenCalled()
+  })
+  it('permits longer than 120 seconds but never renews the fixed thirty-minute cap',async()=>{
+    const f=fixture()
+    await f.queue.authorizeFromUserClick()
+    f.setNow(1000+4*60_000)
+    expect(f.queue.isAuthorized()).toBe(true)
+    expect((await f.queue.pollOne()).state).toBe('idle')
+    expect(f.queue.getLease()?.consent_expires_at_ms).toBe(1801000)
+    f.setNow(1801001)
+    expect(f.queue.isAuthorized()).toBe(false)
+    expect((await f.queue.pollOne()).state).toBe('rejected')
+    expect(f.calls.at(-1)?.name).toBe('lizhi_model_close')
   })
   it('does not ACK success when kernel result is unknown or document revision is unchanged',async()=>{
     const f=fixture();await f.queue.authorizeFromUserClick();f.setJob(claimed())
