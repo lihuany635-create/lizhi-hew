@@ -28,6 +28,9 @@ function fixture() {
     if (value.method === 'hew.meta.hello') {
       return JSON.stringify({ jsonrpc: '2.0', id: 'hello', result: { protocol: 1, profile: 'app' } })
     }
+    if (value.method === 'hew.doc.attach') {
+      return JSON.stringify({ jsonrpc: '2.0', id: 'attach', result: { document: 'current' } })
+    }
     return JSON.stringify({ jsonrpc: '2.0', id: 'command', result: { results: [{}, { object_id: 'obj_7' }, {}] } })
   })
   const open = vi.fn(() => 7)
@@ -64,8 +67,8 @@ describe('Lizhi first-party browser model host (no transport)', () => {
     const result = f.host.execute(f.job)
     expect(result.status).toBe('succeeded')
     expect(result.automaticRetryAllowed).toBe(false)
-    expect(f.frames.map(x => x.method)).toEqual(['hew.meta.hello', 'hew.doc.transact'])
-    const commands = (f.frames[1].params as { commands: {
+    expect(f.frames.map(x => x.method)).toEqual(['hew.meta.hello', 'hew.doc.attach', 'hew.doc.transact'])
+    const commands = (f.frames[2].params as { commands: {
       method: string; params: Record<string, unknown>
     }[] }).commands
     expect(commands.map(c => c.method)).toEqual([
@@ -120,21 +123,23 @@ describe('Lizhi first-party browser model host (no transport)', () => {
     const first = f.host.execute(f.job)
     expect(first.status).toBe('succeeded')
     expect(f.host.execute(f.job)).toBe(first)
-    expect(f.frames).toHaveLength(2)
+    expect(f.frames).toHaveLength(3)
     expect(f.host.execute({ ...f.job, params: {
       origin_m: [1, 0, 0], size_m: [1.2, 0.6, 0.75],
     } }).code).toBe('REQUEST_ID_REUSED_WITH_DIFFERENT_PAYLOAD')
-    expect(f.frames).toHaveLength(2)
+    expect(f.frames).toHaveLength(3)
   })
 
   it('does not repeat a potentially committed mutation after an exception', () => {
     const f = fixture()
     f.dispatch.mockImplementationOnce(() => JSON.stringify({
       jsonrpc: '2.0', id: 'hello', result: { protocol: 1 },
+    })).mockImplementationOnce(() => JSON.stringify({
+      jsonrpc: '2.0', id: 'attach', result: { document: 'current' },
     })).mockImplementationOnce(() => { throw Error('kernel reply lost') })
     expect(f.host.execute(f.job).status).toBe('unknown')
     expect(f.host.execute(f.job).code).toBe('MODEL_RESULT_UNKNOWN_DO_NOT_RETRY')
-    expect(f.dispatch).toHaveBeenCalledTimes(2)
+    expect(f.dispatch).toHaveBeenCalledTimes(3)
     expect(f.close).toHaveBeenCalledTimes(1)
     expect(f.refresh).not.toHaveBeenCalled()
   })
@@ -143,6 +148,8 @@ describe('Lizhi first-party browser model host (no transport)', () => {
     const f = fixture()
     f.dispatch.mockImplementationOnce(() => JSON.stringify({
       jsonrpc: '2.0', id: 'hello', result: { protocol: 1 },
+    })).mockImplementationOnce(() => JSON.stringify({
+      jsonrpc: '2.0', id: 'attach', result: { document: 'current' },
     })).mockImplementationOnce(() => JSON.stringify({
       jsonrpc: '2.0', id: 'command', error: { code: -32602, message: 'invalid geometry' },
     }))
@@ -155,7 +162,7 @@ describe('Lizhi first-party browser model host (no transport)', () => {
     const f = fixture()
     const result = f.host.execute({ ...f.job, action: 'query_scene', params: {} })
     expect(result.status).toBe('succeeded')
-    expect(f.frames[1].method).toBe('hew.query.scene')
+    expect(f.frames[2].method).toBe('hew.query.scene')
     expect(f.refresh).not.toHaveBeenCalled()
   })
 
