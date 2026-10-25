@@ -1,0 +1,120 @@
+# Lizhi model host: isolated tests + actual Hew web build; never deploy.
+# Upstream's standard ci.yml also handles broader releases and PR gates.
+name: Lizhi model browser host M1
+on:
+  push:
+    branches: [feature/lizhi-model-browser-host-v1]
+    paths:
+      - 'app/src/api/lizhiModelBrowserHost.ts'
+      - 'app/src/api/lizhiModelBrowserHost.test.ts'
+      - 'app/src/api/lizhiModelQueue.ts'
+      - 'app/src/api/lizhiModelQueue.test.ts'
+      - 'app/src/api/lizhiModelAuthAdapter.ts'
+      - 'app/src/api/lizhiModelAuthAdapter.test.ts'
+      - 'app/src/api/lizhiModelSameOriginAuth.ts'
+      - 'app/src/api/lizhiModelSameOriginAuth.test.ts'
+      - 'app/scripts/lizhi-embedded-production-e2e.mjs'
+      - 'app/scripts/lizhi-embedded-production-parent.html'
+      - 'app/src/api/LizhiModelQueuePilotPanel.tsx'
+      - 'app/src/App.tsx'
+      - 'app/src/main.tsx'
+      - 'app/index.html'
+      - 'app/e2e/lizhi-model-queue-auth-gate.spec.ts'
+      - 'app/e2e/lizhi-model-queue-mocked-rpc.spec.ts'
+      - '.github/workflows/lizhi-model-host-ci.yml'
+  workflow_dispatch:
+concurrency:
+  group: lizhi-model-host-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+jobs:
+  host-unit-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - name: Install lockfile dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lizhi browser host safety tests
+        run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts src/api/lizhiModelQueue.test.ts src/api/lizhiModelAuthAdapter.test.ts src/api/lizhiModelSameOriginAuth.test.ts
+  hew-web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pinned Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install pinned wasm-pack
+        run: scripts/install-wasm-pack.sh
+      - name: Cache compiled pinned Hew WASM output
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9bf # v6.1.0
+        with:
+          path: app/src/wasm/pkg
+          key: lizhi-wasm-${{ runner.os }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**/src/**/*.rs', 'crates/**/Cargo.toml') }}
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build actual Hew WASM and full browser app
+        run: pnpm --dir app build
+      - name: Install isolated Chromium browser
+        run: pnpm --dir app exec playwright install --with-deps chromium
+      - name: Real Hew WASM Chromium E2E (consent, watertight box, bounds)
+        env:
+          CI: '1'
+        run: pnpm --dir app exec playwright test e2e/lizhi-model-pilot.spec.ts e2e/lizhi-model-queue-auth-gate.spec.ts e2e/lizhi-model-queue-mocked-rpc.spec.ts --project=chromium
+      - name: Build same-origin Hew iframe asset candidate (relative base)
+        run: pnpm --dir app exec vite build --base=./
+      - name: Verify nested relative bundle links, no token exposure
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('app/dist/index.html').read_text(encoding='utf-8')
+          assert 'src="./assets/' in src, 'Nested iframe must NOT assume root /assets/'
+          assert 'href="./assets/' in src
+          assert 'SUPABASE_SERVICE_ROLE_KEY' not in src
+          assert 'LIZHI_MODEL_SITE_MCP_TOKEN' not in src
+          assert list(Path('app/dist').rglob('*.wasm')), 'Native Hew WASM missing'
+          print('LIZHI_HEW_RELATIVE_EMBED_BUNDLE_PASS')
+          PY
+      - name: Prepare isolated production-parent and embedded Hew WASM bundle
+        run: |
+          mkdir -p app/embedded-preview/hew-editor
+          cp -a app/dist/. app/embedded-preview/hew-editor/
+          cp app/scripts/lizhi-embedded-production-parent.html app/embedded-preview/index.html
+      - name: Chromium production-build same-origin iframe + actual WASM smoke
+        run: |
+          python3 -m http.server 4187 --bind 127.0.0.1 --directory app/embedded-preview > /tmp/lizhi-hew-embed.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4187/index.html > /dev/null; then break; fi
+            sleep 1
+          done
+          LIZHI_HEADFUL=1 xvfb-run -a node app/scripts/lizhi-embedded-production-e2e.mjs
+      - name: Upload same-origin Hew iframe bundle candidate (NOT deployed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lizhi-hew-same-origin-embed-dist
+          path: app/dist
+          if-no-files-found: error
+      - name: Publish isolated compiled web artifact (NOT a site deployment)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lizhi-hew-web-dist
+          path: app/dist
+          if-no-files-found: error

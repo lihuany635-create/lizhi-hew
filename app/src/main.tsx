@@ -90,7 +90,11 @@ try {
 // windows), and offline availability at the workbench — no wifi, no
 // problem — is the entire point of it existing (`shop/ShopApp.tsx`'s doc
 // comment). Do not add `isShopWindow` to this condition.
-if (!isSettingsWindow && !isLibraryWindow && !isTauri && import.meta.env.PROD && 'serviceWorker' in navigator) {
+// A same-origin embedded Hew iframe is part of the Lizhi Cloud portal. Do not
+// register an extra service worker from a nested editor frame; it should never
+// gain control over portal navigation, authentication or other workspaces.
+if (!isSettingsWindow && !isLibraryWindow && !isTauri &&
+    window.parent === window && import.meta.env.PROD && 'serviceWorker' in navigator) {
   import('virtual:pwa-register').then(({ registerSW }) =>
     registerSW({ immediate: true }),
   )
