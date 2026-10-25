@@ -11,6 +11,9 @@ on:
       - 'app/src/api/lizhiModelQueue.test.ts'
       - 'app/src/api/lizhiModelAuthAdapter.ts'
       - 'app/src/api/lizhiModelAuthAdapter.test.ts'
+      - 'app/src/api/LizhiModelQueuePilotPanel.tsx'
+      - 'app/src/App.tsx'
+      - 'app/e2e/lizhi-model-queue-auth-gate.spec.ts'
       - 'docs/lizhi-model/**'
       - '.github/workflows/lizhi-model-host-ci.yml'
   workflow_dispatch:
@@ -63,7 +66,7 @@ jobs:
       - name: Real Hew WASM Chromium E2E (consent, watertight box, bounds)
         env:
           CI: '1'
-        run: pnpm --dir app exec playwright test e2e/lizhi-model-pilot.spec.ts --project=chromium
+        run: pnpm --dir app exec playwright test e2e/lizhi-model-pilot.spec.ts e2e/lizhi-model-queue-auth-gate.spec.ts --project=chromium
       - name: Publish isolated compiled web artifact (NOT a site deployment)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
