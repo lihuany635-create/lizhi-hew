@@ -3,7 +3,7 @@
  */
 import {chromium,expect} from '@playwright/test'
 const ORIGIN='http://127.0.0.1:4187'
-const browser=await chromium.launch({headless:true,args:[
+const browser=await chromium.launch({headless:process.env.LIZHI_HEADFUL!=='1',args:[
   '--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader'
 ]})
 try {
@@ -23,8 +23,13 @@ try {
   const other=await ctx.newPage()
   await other.goto(ORIGIN+'/hew-editor/?lizhi-model-queue=1',{waitUntil:'domcontentloaded'})
   await other.bringToFront()
-  const hidden=await page.evaluate(()=>document.visibilityState==='hidden')
-  if(!hidden)throw Error('Did not actually background the Hew page')
+  // Real headed tabs under xvfb expose actual visibility transitions.
+  // Headless Playwright documents every page as focused/visible, so it is
+  // insufficient for this specific background-ACK regression.
+  await expect.poll(()=>page.evaluate(()=>document.visibilityState),{
+    timeout:6000,intervals:[100,250,500]
+  }).toBe('hidden')
+  const hidden=true
   await expect(frame.getByRole('status')).toContainText('Hew 幾何交易完成',{timeout:25000})
   const trace=await page.evaluate(()=>window.__lizhiEmbedTrace)
   const calls=trace.map(x=>x.name)
