@@ -11,6 +11,8 @@
       if(name==='lizhi_model_begin'){sid=params.p_session;doc=params.p_document;revision=params.p_revision;data=true;}
       else if(name==='lizhi_model_heartbeat')data=params.p_session===sid;
       else if(name==='lizhi_model_claim'&&!claimed){
+        // Force a real tab switch before the WASM mutation and DB ACK.
+        await new Promise(resolve=>setTimeout(resolve,1800));
         claimed=true;
         data={job_id:'33333333-3333-4333-8333-333333333333',
           request_id:'44444444-4444-4444-8444-444444444444',
