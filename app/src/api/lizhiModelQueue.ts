@@ -88,6 +88,7 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
       if (!UUID.test(sid)) return false
       // Must not start if the user changed documents during the auth round trip.
       const before={...doc}
+      const requestedAt=env.now()
       const allowed=await query(env.rpc,'lizhi_model_begin',{
         p_session:sid,p_document:doc.document_id,p_revision:doc.revision,
       })
@@ -99,7 +100,7 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
         return false
       }
       lease={session_id:sid,document_id:before.document_id,
-        revision:before.revision,deadline:env.now()+MAX_CONSENT_MS}
+        revision:before.revision,deadline:requestedAt+MAX_CONSENT_MS}
       return true
     } catch { return false }
     finally {busy=false}
@@ -203,5 +204,6 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
   }
   return {authorizeFromUserClick,pollOne,revoke,
     isAuthorized:()=>validLease(),
-    getLease:()=>validLease()?{...lease!}:null}
+    getLease:()=>validLease()?{session_id:lease!.session_id,document_id:lease!.document_id,
+      revision:lease!.revision,consent_expires_at_ms:lease!.deadline}:null}
 }
