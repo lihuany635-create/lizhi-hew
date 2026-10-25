@@ -13,6 +13,8 @@ on:
       - 'app/src/api/lizhiModelAuthAdapter.test.ts src/api/lizhiModelSameOriginAuth.test.ts'
       - 'app/src/api/lizhiModelSameOriginAuth.ts'
       - 'app/src/api/lizhiModelSameOriginAuth.test.ts'
+      - 'app/scripts/lizhi-embedded-production-e2e.mjs'
+      - 'app/scripts/lizhi-embedded-production-parent.html'
       - 'app/src/api/LizhiModelQueuePilotPanel.tsx'
       - 'app/src/App.tsx'
       - 'app/e2e/lizhi-model-queue-auth-gate.spec.ts'
@@ -87,6 +89,21 @@ jobs:
           assert list(Path('app/dist').rglob('*.wasm')), 'Native Hew WASM missing'
           print('LIZHI_HEW_RELATIVE_EMBED_BUNDLE_PASS')
           PY
+      - name: Prepare isolated production-parent and embedded Hew WASM bundle
+        run: |
+          mkdir -p app/embedded-preview/hew-editor
+          cp -a app/dist/. app/embedded-preview/hew-editor/
+          cp app/scripts/lizhi-embedded-production-parent.html app/embedded-preview/index.html
+      - name: Chromium production-build same-origin iframe + actual WASM smoke
+        run: |
+          python3 -m http.server 4187 --bind 127.0.0.1 --directory app/embedded-preview > /tmp/lizhi-hew-embed.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4187/index.html > /dev/null; then break; fi
+            sleep 1
+          done
+          node app/scripts/lizhi-embedded-production-e2e.mjs
       - name: Upload same-origin Hew iframe bundle candidate (NOT deployed)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
