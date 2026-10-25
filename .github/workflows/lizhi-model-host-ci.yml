@@ -1,0 +1,35 @@
+# Lizhi model host: isolated tests only (no deployment)
+# This fork's normal ci.yml runs the full Hew build on main and PRs.
+# Test only the added first-party boundary on this development branch.
+name: Lizhi model browser host M1
+
+on:
+  push:
+    branches: [feature/lizhi-model-browser-host-v1]
+    paths:
+      - 'app/src/api/lizhiModelBrowserHost.ts'
+      - 'app/src/api/lizhiModelBrowserHost.test.ts'
+      - 'docs/lizhi-model/**'
+      - '.github/workflows/lizhi-model-host-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-unit-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout pinned branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - name: Install lockfile deps
+        run: pnpm install --frozen-lockfile
+      - name: Lizhi browser host safety tests
+        run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts
