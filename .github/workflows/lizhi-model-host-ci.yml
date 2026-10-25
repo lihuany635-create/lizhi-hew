@@ -9,6 +9,8 @@ on:
       - 'app/src/api/lizhiModelBrowserHost.test.ts'
       - 'app/src/api/lizhiModelQueue.ts'
       - 'app/src/api/lizhiModelQueue.test.ts'
+      - 'app/src/api/lizhiModelAuthAdapter.ts'
+      - 'app/src/api/lizhiModelAuthAdapter.test.ts'
       - 'docs/lizhi-model/**'
       - '.github/workflows/lizhi-model-host-ci.yml'
   workflow_dispatch:
@@ -30,7 +32,7 @@ jobs:
       - name: Install lockfile dependencies
         run: pnpm install --frozen-lockfile
       - name: Lizhi browser host safety tests
-        run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts src/api/lizhiModelQueue.test.ts
+        run: pnpm --dir app exec vitest run src/api/lizhiModelBrowserHost.test.ts src/api/lizhiModelQueue.test.ts src/api/lizhiModelAuthAdapter.test.ts
   hew-web-build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
