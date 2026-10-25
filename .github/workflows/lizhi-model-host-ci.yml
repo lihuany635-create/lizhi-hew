@@ -17,6 +17,7 @@ on:
       - 'app/scripts/lizhi-embedded-production-parent.html'
       - 'app/src/api/LizhiModelQueuePilotPanel.tsx'
       - 'app/src/App.tsx'
+      - 'app/src/main.tsx'
       - 'app/e2e/lizhi-model-queue-auth-gate.spec.ts'
       - 'app/e2e/lizhi-model-queue-mocked-rpc.spec.ts'
       - '.github/workflows/lizhi-model-host-ci.yml'
