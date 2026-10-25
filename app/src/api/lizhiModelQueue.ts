@@ -68,11 +68,17 @@ async function query(db: ModelJobRpc, name: string, params: Record<string, unkno
 export function createLizhiModelQueue(env: ModelJobEnvironment) {
   let lease: { session_id: string; document_id: string; revision: string; deadline: number } | null = null
   let busy = false
+  let halted = false
   const received = new Set<string>()
+  // Any unknown mutation halts future claims until explicit revoke/re-authorize.
+  const uncertain=(code:string,job_id?:string):QueueOutcome=>{
+    halted=true
+    return {state:'unknown',code,job_id}
+  }
 
   function validLease(): boolean {
     const d=env.getDocument()
-    return !!lease && env.pageVisible() && env.now() < lease.deadline &&
+    return !halted && !!lease && env.pageVisible() && env.now() < lease.deadline &&
       validDoc(d) && d.document_id === lease.document_id &&
       d.revision === lease.revision
   }
@@ -109,6 +115,7 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
   async function revoke(): Promise<boolean> {
     const prev=lease
     lease=null
+    halted=false
     if (!prev) return true
     try {
       return await query(env.rpc,'lizhi_model_close',{p_session:prev.session_id}) === true
@@ -145,12 +152,12 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
           received.has(claim.request_id as string)) {
         // Claimed jobs cannot be automatically replayed. A bad claim is
         // reported as unknown for manual inspection; never run its command.
-        return {state:'unknown',code:'MODEL_INVALID_CLAIM_DO_NOT_RETRY',
-          job_id:typeof claim.job_id==='string'?claim.job_id:undefined}
+        return uncertain('MODEL_INVALID_CLAIM_DO_NOT_RETRY',
+          typeof claim.job_id==='string'?claim.job_id:undefined)
       }
       const jobId=claim.job_id as string
       received.add(claim.request_id as string)
-      if (!validLease())return {state:'unknown',code:'MODEL_CONSENT_LOST_AFTER_CLAIM',job_id:jobId}
+      if (!validLease())return uncertain('MODEL_CONSENT_LOST_AFTER_CLAIM',jobId)
       const job: ClaimedModelJob={
         request_id:claim.request_id as string,session_id:before.session_id,
         document_id:before.document_id,expected_revision:before.revision,
@@ -168,24 +175,24 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
           })
           if (finish===true)return {state:'failed',code:receipt.code??'MODEL_ENGINE_REJECTED',job_id:jobId}
         }
-        return {state:'unknown',code:receipt.code??'MODEL_RESULT_UNKNOWN_DO_NOT_RETRY',job_id:jobId}
+        return uncertain(receipt.code??'MODEL_RESULT_UNKNOWN_DO_NOT_RETRY',jobId)
       }
       // Revision is read from actual Hew scene/application; the bridge cannot
       // claim success merely because a JSON-RPC reply said "result".
       const committed=await env.confirmCommittedRevision(before.revision)
       if (!validRevision(committed) || committed===before.revision)
-        return {state:'unknown',code:'MODEL_REVISION_NOT_VERIFIED_DO_NOT_RETRY',job_id:jobId}
+        return uncertain('MODEL_REVISION_NOT_VERIFIED_DO_NOT_RETRY',jobId)
       const current=env.getDocument()
       if (!current || current.document_id!==before.document_id ||
           current.revision!==committed || !env.pageVisible() ||
           env.now()>=before.deadline)
-        return {state:'unknown',code:'MODEL_DOCUMENT_CHANGED_AFTER_COMMIT_DO_NOT_RETRY',job_id:jobId}
+        return uncertain('MODEL_DOCUMENT_CHANGED_AFTER_COMMIT_DO_NOT_RETRY',jobId)
       const finished=await query(env.rpc,'lizhi_model_finish',{
         p_session:before.session_id,p_job:jobId,p_success:true,
         p_new_revision:committed,p_result:{kernel_transaction_committed:true},p_error:null,
       })
       if (finished!==true)
-        return {state:'unknown',code:'MODEL_FINISH_ACK_UNKNOWN_DO_NOT_RETRY',job_id:jobId}
+        return uncertain('MODEL_FINISH_ACK_UNKNOWN_DO_NOT_RETRY',jobId)
       lease={...before,revision:committed}
       // Scene projection is best-effort: do not invalidate committed receipt.
       try {
@@ -199,7 +206,7 @@ export function createLizhiModelQueue(env: ModelJobEnvironment) {
       } catch { /* status succeeded, but scene snapshot not published */ }
       return {state:'succeeded',job_id:jobId,revision:committed}
     } catch {
-      return {state:'unknown',code:'MODEL_RPC_RESULT_UNKNOWN_DO_NOT_RETRY'}
+      return uncertain('MODEL_RPC_RESULT_UNKNOWN_DO_NOT_RETRY')
     } finally {busy=false}
   }
   return {authorizeFromUserClick,pollOne,revoke,
