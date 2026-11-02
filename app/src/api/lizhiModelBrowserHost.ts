@@ -1,3 +1,4 @@
+/* oxlint-disable lingui/no-unlocalized-strings -- 立之 integration surface: Traditional Chinese only, transaction labels and status text are not app UI copy */
 /**
  * 立之 3D browser-side execution core (AGPL-3.0-only, derived integration for Hew).
  *

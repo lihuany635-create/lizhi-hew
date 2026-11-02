@@ -1,3 +1,4 @@
+/* oxlint-disable lingui/no-unlocalized-strings -- 立之 integration surface: Traditional Chinese only, transaction labels and status text are not app UI copy */
 /**
  * Explicit-click model queue panel. Production MUST run under an embedded
  * same-origin authenticated Lizhi Cloud parent; standalone production cannot

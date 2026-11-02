@@ -8,6 +8,9 @@ const browser=await chromium.launch({headless:process.env.LIZHI_HEADFUL!=='1',ar
 ]})
 try {
   const ctx=await browser.newContext()
+  // A fresh profile shows Hew's welcome screen, whose overlay covers the AI
+  // panel and makes the first click race its appearance. Start without it.
+  await ctx.addInitScript(()=>{try{localStorage.setItem('hew.settings.showWelcome','false')}catch{}})
   const page=await ctx.newPage()
   const wasmOk=[]
   page.on('response',r=>{if(r.url().includes('.wasm')&&r.ok())wasmOk.push(r.url())})

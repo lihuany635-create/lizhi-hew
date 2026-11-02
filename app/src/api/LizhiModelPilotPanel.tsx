@@ -1,3 +1,4 @@
+/* oxlint-disable lingui/no-unlocalized-strings -- 立之 integration surface: Traditional Chinese only, transaction labels and status text are not app UI copy */
 /**
  * Development-only local integration proof for Lizhi Model × Hew WASM.
  * No network, no token, no MCP, no cross-origin message event.
