@@ -1,0 +1,44 @@
+# Builds the headless hew-cli for the 立之 3D cloud worker and publishes it
+# as the `lizhi-hew-cli` release asset (overwritten on every build).
+name: lizhi hew-cli build
+# Manual only: publishing the release is an explicit step at go-live.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: lizhi-hew-cli-release
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: lizhi-hew-cli
+      - name: Build hew-cli (release)
+        run: cargo build --release -p hew-cli --locked
+      - name: Smoke test headless modeling and snapshot
+        run: |
+          B=target/release/hew-cli
+          cat > box.jsonl <<'EOF'
+          {"jsonrpc":"2.0","id":1,"method":"hew.meta.hello","params":{"protocol":1}}
+          {"jsonrpc":"2.0","id":2,"method":"hew.doc.new","params":{}}
+          {"jsonrpc":"2.0","id":3,"method":"hew.doc.transact","params":{"commands":[{"method":"hew.sketch.draw_rect","as":"rect","params":{"plane":{"ground":true},"corner_a":[0,0,0],"corner_b":[1,1,0]}},{"method":"hew.solid.extrude","params":{"region":{"$ref":"rect#/region_id"},"distance":0.5}}]}}
+          EOF
+          $B run box.jsonl --out box.hew
+          $B dispatch hew.query.scene --file box.hew > scene.json
+          grep -q '"result"' scene.json
+          $B dispatch hew.view.snapshot '{"width":64,"height":64}' --file box.hew | grep -q png_base64
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp target/release/hew-cli hew-cli-linux-x64
+          gh release view lizhi-hew-cli >/dev/null 2>&1 || \
+            gh release create lizhi-hew-cli --prerelease --title "lizhi hew-cli (cloud worker)" \
+              --notes "Headless hew-cli for the 立之 3D cloud worker. Rebuilt automatically."
+          gh release upload lizhi-hew-cli hew-cli-linux-x64 --clobber
