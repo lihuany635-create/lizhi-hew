@@ -11,7 +11,10 @@
  * A successful response means the WASM kernel committed a transaction; it
  * does NOT mean .hew bytes reached persistent disk. File save/ack is separate.
  */
-export type ModelAction = 'create_box' | 'move' | 'query_scene'
+import { checkCallJob } from './lizhiModelPolicy'
+
+/** `call` runs any policy-allowed Hew API method (see lizhiModelPolicy.ts). */
+export type ModelAction = 'create_box' | 'move' | 'query_scene' | 'call'
 
 export interface ClaimedModelJob {
   request_id: string
@@ -33,6 +36,8 @@ export interface ModelSceneDispatcher {
   api_connection_open(): number
   api_dispatch(connection: number, frame: string): string | undefined
   api_connection_close(connection: number): void
+  /** Real WASM Scene answers whether a method changes the document. */
+  api_method_mutates?(method: string): boolean
 }
 
 export interface ModelHostDeps {
@@ -41,12 +46,20 @@ export interface ModelHostDeps {
   refreshScene(): void
   /** Must be backed by authoritative browser document session; NOT remote data. */
   now(): number
+  /**
+   * Optional: perform host-side effects a dispatch left behind (view camera,
+   * zoom, scene activation, visibility), the same way the desktop live
+   * bridge does after `Scene.api_dispatch`.
+   */
+  afterDispatch?(method: string, reply: string, mutated: boolean): void
 }
 
 export interface LocalModelReceipt {
   status: 'succeeded' | 'rejected' | 'unknown'
   code?: string
   reply?: unknown
+  /** Present on `call`: whether the committed method changed the document. */
+  mutated?: boolean
   automaticRetryAllowed: false
 }
 
@@ -64,11 +77,19 @@ const refuse = (code: string): LocalModelReceipt =>
   ({ status: 'rejected', code, automaticRetryAllowed: false })
 
 const MAX_BYTES = 8192
+const MAX_CALL_BYTES = 32768
 const MAX_REPLY_CHARS = 65536
+// Snapshots, exports and saves come back base64 inline; the queue uploads
+// them to private storage, so a call reply may be large but stays bounded.
+const MAX_CALL_REPLY_CHARS = 48 * 1024 * 1024
 
 function commandFor(job: ClaimedModelJob): { method: string; params: Record<string, unknown> } | null {
   const p = job.params
   if (!obj(p)) return null
+  if (job.action === 'call') {
+    const checked = checkCallJob(p)
+    return checked.ok ? { method: checked.method, params: checked.params } : null
+  }
   if (job.action === 'query_scene') {
     return keys(p, []) ? { method: 'hew.query.scene', params: {} } : null
   }
@@ -128,7 +149,8 @@ export function createLizhiModelHost(deps: ModelHostDeps) {
     } catch {
       return refuse('INVALID_JOB')
     }
-    if (!payload || new TextEncoder().encode(payload).byteLength > MAX_BYTES ||
+    if (!payload ||
+        new TextEncoder().encode(payload).byteLength > (job.action === 'call' ? MAX_CALL_BYTES : MAX_BYTES) ||
         !ID.test(job.request_id ?? '') || !ID.test(job.session_id ?? '') ||
         typeof job.document_id !== 'string' || job.document_id.length > 128 ||
         !job.document_id || typeof job.expected_revision !== 'string' ||
@@ -146,8 +168,13 @@ export function createLizhiModelHost(deps: ModelHostDeps) {
     if (lease.revision !== job.expected_revision) return refuse('STALE_DOCUMENT_REVISION')
     const scene = deps.getScene()
     if (!scene) return refuse('SCENE_NOT_READY')
+    if (job.action === 'call') {
+      const checked = checkCallJob(job.params)
+      if (!checked.ok) return refuse(checked.code)
+    }
     const command = commandFor(job)
     if (!command) return refuse('ACTION_NOT_ALLOWED_OR_INVALID_GEOMETRY')
+    const isCall = job.action === 'call'
     const uncertain: LocalModelReceipt = {
       status: 'unknown', code: 'MODEL_RESULT_UNKNOWN_DO_NOT_RETRY', automaticRetryAllowed: false,
     }
@@ -176,14 +203,26 @@ export function createLizhiModelHost(deps: ModelHostDeps) {
       const parsed = reply ? JSON.parse(reply) as { error?: unknown; result?: unknown } : null
       if (!parsed) return uncertain
       if (parsed.error) {
-        const receipt = refuse('HEW_KERNEL_REFUSED')
+        const receipt: LocalModelReceipt = isCall
+          ? { ...refuse('HEW_KERNEL_REFUSED'), reply: { error: parsed.error } }
+          : refuse('HEW_KERNEL_REFUSED')
         receipts.set(job.request_id, { payload, receipt })
         return receipt
       }
-      if (parsed.result === undefined || reply!.length > MAX_REPLY_CHARS) return uncertain
-      if (command.method !== 'hew.query.scene') deps.refreshScene()
+      if (parsed.result === undefined ||
+          reply!.length > (isCall ? MAX_CALL_REPLY_CHARS : MAX_REPLY_CHARS)) return uncertain
+      const mutated = isCall
+        ? (typeof scene.api_method_mutates === 'function'
+            ? scene.api_method_mutates(command.method)
+            : command.method !== 'hew.query.scene')
+        : command.method !== 'hew.query.scene'
+      if (mutated) deps.refreshScene()
+      if (isCall) {
+        try { deps.afterDispatch?.(command.method, reply!, mutated) } catch { /* view effect only */ }
+      }
       const receipt: LocalModelReceipt = {
         status: 'succeeded', reply: parsed.result, automaticRetryAllowed: false,
+        ...(isCall ? { mutated } : {}),
       }
       receipts.set(job.request_id, { payload, receipt })
       return receipt

@@ -71,7 +71,7 @@ import { tagPathKey } from './panels/tagModel'
 import { LogPanel } from './log/LogPanel'
 import * as LogStore from './log/LogStore'
 import { installTestHarness, type PrintRecorder } from './test/harness'
-import { installLiveBridge, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
+import { installLiveBridge, applyPendingViewDirective, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
 import { LizhiModelPilotPanel } from './api/LizhiModelPilotPanel'
 import { LizhiModelQueuePilotPanel } from './api/LizhiModelQueuePilotPanel'
 import { canMountProductionModelQueue } from './api/lizhiModelSameOriginAuth'
@@ -7111,6 +7111,20 @@ export default function App() {
               if(viewportApi.current!==null)viewportApi.current.refreshScene()
               else reconcileRef.current()
             })
+          }}
+          afterDispatch={(_method, _reply, mutated) => {
+            // Same post-dispatch contract as the desktop live bridge: apply
+            // camera/zoom/units/scene-activation effects the kernel left
+            // pending, and re-sync tag/hidden visibility after a mutation.
+            const scene = sceneRef.current
+            if (scene === null) return
+            const directive = scene.take_pending_view_directive()
+            const activation = directive !== undefined && directive.includes('"activate_scene"')
+            if (mutated && !activation) reconcileVisibilityRef.current()
+            if (directive !== undefined) {
+              applyPendingViewDirective(directive, viewportApi.current,
+                (sid) => scenesRef.current.activate(sid))
+            }
           }}
         />
       )}

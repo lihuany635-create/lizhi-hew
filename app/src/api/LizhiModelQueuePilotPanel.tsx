@@ -7,13 +7,15 @@
 import {useEffect,useRef,useState} from 'react'
 import {createLizhiModelHost,type ModelSceneDispatcher} from './lizhiModelBrowserHost'
 import {createLizhiModelQueue,type DocumentIdentity} from './lizhiModelQueue'
-import {createLizhiModelAuthAdapter} from './lizhiModelAuthAdapter'
+import {createLizhiModelAuthAdapter,createLizhiModelArtifactUploader} from './lizhiModelAuthAdapter'
 import {sameOriginParentLizhiAuth,devStandaloneLizhiAuth} from './lizhiModelSameOriginAuth'
 
 export interface LizhiModelQueuePilotProps {
   getScene():ModelSceneDispatcher|null
   getDocument():DocumentIdentity|null
   refreshScene():void
+  /** Host-side view effects after a ChatGPT call (camera, zoom, scenes). */
+  afterDispatch?(method:string,reply:string,mutated:boolean):void
 }
 export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
   const [status,setStatus]=useState('尚未啟用；只支援同源的立之雲端庫本人登入')
@@ -77,6 +79,7 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
         getLease:()=>queue?.getLease()??null,
         refreshScene:()=>latest.current.refreshScene(),
         now:()=>Date.now(),
+        afterDispatch:(method,reply,mutated)=>latest.current.afterDispatch?.(method,reply,mutated),
       })
       queue=createLizhiModelQueue({
         rpc:adapter.rpc,host,
@@ -86,6 +89,8 @@ export function LizhiModelQueuePilotPanel(props:LizhiModelQueuePilotProps) {
         // Server-side freshness checks still fail closed if the browser sleeps.
         pageVisible:()=>document.documentElement.isConnected && !window.closed,
         now:()=>Date.now(),uuid:()=>crypto.randomUUID(),
+        uploadArtifact:createLizhiModelArtifactUploader(session.client,data.user.id,
+          adapter.verifyAuthenticatedOwner,()=>crypto.randomUUID()),
         confirmCommittedRevision:async(previous)=>{
           // App.refreshScene synchronously flushes the authoritative
           // document revision. RAF callbacks do not run in background tabs,
