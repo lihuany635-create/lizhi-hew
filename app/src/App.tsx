@@ -71,7 +71,10 @@ import { tagPathKey } from './panels/tagModel'
 import { LogPanel } from './log/LogPanel'
 import * as LogStore from './log/LogStore'
 import { installTestHarness, type PrintRecorder } from './test/harness'
-import { installLiveBridge, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
+import { installLiveBridge, applyPendingViewDirective, type LiveOpOutcome, type LiveOpRunner } from './api/liveBridge'
+import { LizhiModelPilotPanel } from './api/LizhiModelPilotPanel'
+import { LizhiModelQueuePilotPanel } from './api/LizhiModelQueuePilotPanel'
+import { canMountProductionModelQueue } from './api/lizhiModelSameOriginAuth'
 import { install as installConsoleCapture, restore as restoreConsoleCapture } from './log/consoleCapture'
 import { MATERIAL_SENTINEL } from './tools/PaintTool'
 import { outlinerDrawing, resolveDraft, setKernelHidden, type OutlinerDrawing, type PlaneUnitsScene } from './tools/planeUnits'
@@ -608,6 +611,16 @@ export default function App() {
   // so material #1 of document B collides with the cached handle of material
   // #1 of document A (audit q-web-robustness).
   const [docGeneration, setDocGeneration] = useState(0)
+  // Diagnostic 3D host uses one real App revision per document generation.
+  const lizhiDocumentRevRef = useRef({ generation: docGeneration, revision: docRev })
+  lizhiDocumentRevRef.current = { generation: docGeneration, revision: docRev }
+  // Stable per-document tab identity for M3 DEV queue testing. A page reload
+  // requires a fresh 120-second authorization; this is NOT persisted document ID.
+  const lizhiQueueIdentityRef = useRef<{generation:number;id:string}|null>(null)
+  if(!lizhiQueueIdentityRef.current ||
+     lizhiQueueIdentityRef.current.generation!==docGeneration) {
+    lizhiQueueIdentityRef.current={generation:docGeneration,id:crypto.randomUUID()}
+  }
   /** Currently selected material id for the Paint tool. */
   const [currentMaterialId, setCurrentMaterialId] = useState<bigint>(MATERIAL_SENTINEL)
   // Picking a material makes it current AND activates the Paint tool, so the
@@ -7064,6 +7077,58 @@ export default function App() {
         background: 'var(--surface-canvas-page, #1a1a1a)',
       }}
     >
+      {/* Explicit browser-side pilot only in local developer builds.
+          No network, no MCP and no outside event listener. User must opt in. */}
+      {import.meta.env.DEV && new URLSearchParams(window.location.search).has('lizhi-model-pilot') && (
+        <LizhiModelPilotPanel
+          getScene={() => sceneRef.current}
+          getRevision={() => `${lizhiDocumentRevRef.current.generation}:${lizhiDocumentRevRef.current.revision}`}
+          refreshScene={() => {
+            if (viewportApi.current !== null) viewportApi.current.refreshScene()
+            else reconcileRef.current()
+          }}
+        />
+      )}
+
+      {/* M3 queue is opt-in: DEV isolated mock, or production same-origin
+          embedded Lizhi Cloud page with verified first-party auth host.
+          Neither variant transfers JWT through a URL or postMessage. */}
+      {((import.meta.env.DEV && new URLSearchParams(window.location.search).has('lizhi-model-queue-pilot')) ||
+        (!import.meta.env.DEV &&
+          new URLSearchParams(window.location.search).get('lizhi-model-queue')==='1' &&
+          canMountProductionModelQueue(window))) && (
+        <LizhiModelQueuePilotPanel
+          getScene={() => sceneRef.current}
+          getDocument={() => sceneRef.current ? {
+            document_id:lizhiQueueIdentityRef.current!.id,
+            revision:`${lizhiDocumentRevRef.current.generation}:${lizhiDocumentRevRef.current.revision}`,
+          } : null}
+          refreshScene={() => {
+            // Job ACK must work while the Hew tab is in the background.
+            // Flush the authoritative App document revision synchronously
+            // with the real WASM scene refresh; background RAF is paused.
+            flushSync(() => {
+              if(viewportApi.current!==null)viewportApi.current.refreshScene()
+              else reconcileRef.current()
+            })
+          }}
+          afterDispatch={(_method, _reply, mutated) => {
+            // Same post-dispatch contract as the desktop live bridge: apply
+            // camera/zoom/units/scene-activation effects the kernel left
+            // pending, and re-sync tag/hidden visibility after a mutation.
+            const scene = sceneRef.current
+            if (scene === null) return
+            const directive = scene.take_pending_view_directive()
+            const activation = directive !== undefined && directive.includes('"activate_scene"')
+            if (mutated && !activation) reconcileVisibilityRef.current()
+            if (directive !== undefined) {
+              applyPendingViewDirective(directive, viewportApi.current,
+                (sid) => scenesRef.current.activate(sid))
+            }
+          }}
+        />
+      )}
+
       {/* Linux desktop shell only: borderless window → draw our own title bar
           (KWin/WebKitGTK won't repaint the native one after setTitle). Windows
           and macOS keep native decorations, so their OS caption (which reflects
